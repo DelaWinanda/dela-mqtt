@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IoT Dashboard Multi-Broker</title>
+  
+  <!-- Font Google -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  
+  <!-- MQTT.js library -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+  <style>
+    :root { 
+      --bg-color: #0F1117; 
+      --card-bg: #1A1D27; 
+      --border-color: #2D333F; 
+      --accent: #10B981; 
+      --accent-muted: rgba(16, 185, 129, 0.1); 
+      --color-on: #10B981;
+      --color-off: #374151;
+      --color-warn: #F59E0B;
+      --color-err: #EF4444; 
+      --color-pub: #3B82F6;
+      --color-sub: #10B981;
+      --text-main: #F3F4F6; 
+      --text-muted: #9CA3AF; 
+      --font-ui: 'Inter', 'Helvetica Neue', Arial, sans-serif; 
+      --font-mono: 'Courier New', Courier, monospace; 
+      --font-headline: 'Exo 2', sans-serif;
+      --btn-off: #2D333F;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: var(--font-ui);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow-x: hidden;
+    }
+
+    h1, h2, h3, h4 { font-family: var(--font-headline); margin-top: 0; font-weight: 600; }
+    
+    h2 {
+      font-size: 11px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      letter-spacing: 0.1em;
+      margin-bottom: 12px;
+      font-family: var(--font-ui);
+    }
+
+    /* Top Warning Banner */
+    #warning-banner {
+      background-color: #451a1a;
+      border-bottom: 1px solid var(--color-err);
+      color: var(--color-err);
+      text-align: center;
+      padding: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      display: none; /* hidden by default */
+    }
+
+    /* Main Grid Layout */
+    .dashboard {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
+      padding: 20px;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    @media(min-width: 1024px) {
+      .dashboard {
+        grid-template-columns: 280px 1fr 280px;
+        overflow-y: hidden;
+        padding: 0;
+        gap: 0;
+      }
+      .dashboard > aside:first-child {
+        border-right: 1px solid var(--border-color);
+        background: #13161E;
+        padding: 16px;
+      }
+      .dashboard > main {
+        padding: 20px;
+        background: var(--bg-color);
+      }
+      .dashboard > aside:last-child {
+        border-left: 1px solid var(--border-color);
+        background: #0D0F14;
+        padding: 16px;
+      }
+      .scrollable-col {
+        overflow-y: auto;
+      }
+      /* Custom scrollbar */
+      ::-webkit-scrollbar { width: 6px; }
+      ::-webkit-scrollbar-track { background: var(--bg-color); }
+      ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+    }
+
+    /* Panel & Cards */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+      position: relative;
+    }
+    
+    .card-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      letter-spacing: 0.1em;
+      margin-bottom: 12px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+    .card-title span:first-child { flex: 1; }
+
+    /* Broker Status Styles */
+    .broker-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      background: transparent !important;
+      border: none !important;
+    }
+    .broker-status::before {
+      content: '';
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .status-connected { color: var(--color-on); }
+    .status-connected::before { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+    .status-disconnected { color: var(--text-muted); }
+    .status-disconnected::before { background: var(--color-err); }
+    .status-error { color: var(--color-err); }
+    .status-error::before { background: var(--color-err); }
+    .status-connecting { color: var(--color-warn); }
+    .status-connecting::before { background: var(--color-warn); }
+
+    .input-group {
+      margin-bottom: 12px;
+    }
+    .input-group label {
+      display: none; /* Make labels hidden or style them better */
+    }
+    .input-group input {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--border-color);
+      background-color: #000;
+      color: var(--text-main);
+      font-family: var(--font-ui);
+      font-size: 11px;
+    }
+
+    .btn {
+      padding: 6px 12px;
+      font-size: 11px;
+      border-radius: 4px;
+      border: 1px solid var(--border-color);
+      background: transparent;
+      color: white;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .btn:hover { background: rgba(255,255,255,0.05); }
+    .btn-connect { border-color: var(--accent); color: var(--accent); }
+    .btn-connect:hover { background: var(--accent-muted); }
+    .btn-disconnect { border-color: var(--color-err); color: var(--color-err); }
+    .btn-clear { width: 100%; margin-top: 10px; opacity: 0.7; }
+    .btn-clear:hover { opacity: 1; }
+
+    /* For broker cards specifically */
+    aside .card { background: rgba(255,255,255,0.02); padding: 12px; margin-bottom: 8px; border-radius: 6px; }
+    aside .card-title { font-size: 13px; color: var(--text-main); font-weight: 500; text-transform: none; letter-spacing: normal; }
+    aside .card-title .broker-status { padding: 0; font-size: inherit; font-weight: 500; text-transform: none; color: inherit; }
+    aside .btn { padding: 4px 8px; font-size: 10px; }
+    aside .input-group { margin-bottom: 8px; }
+
+    /* Sensor Panel */
+    .sensor-values {
+      display: grid; 
+      grid-template-columns: 1fr 1fr; 
+      gap: 16px; 
+      margin-bottom: 0;
+    }
+    .sensor-box {
+      text-align: left;
+    }
+    .sensor-val {
+      font-size: 32px; font-weight: 300; font-family: var(--font-mono); color: var(--text-main); margin-bottom: 4px;
+    }
+    .sensor-label { font-size: 11px; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.1em; margin-bottom: 8px; font-family: var(--font-ui); font-weight: 500; }
+    
+    .progress-bar-bg {
+      height: 4px; background-color: var(--border-color); border-radius: 2px; overflow: hidden; margin-bottom: 15px; width: 100%;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background-color: var(--accent);
+      transition: width 0.5s ease;
+      width: 0%;
+    }
+
+    .sensor-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px; color: var(--text-muted); text-transform: uppercase;
+    }
+    .badge {
+      padding: 3px 6px; border-radius: 4px; font-weight: 600; font-size: 10px; text-transform: uppercase;
+    }
+    .badge-offline { background-color: var(--color-err); color: white; display: none; }
+    .badge-error { background-color: var(--color-warn); color: white; display: none; }
+
+    /* Relay Panel */
+    .relay-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+    .relay-card {
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 20px;
+      text-align: left;
+      transition: all 0.2s;
+      background: transparent;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .relay-card:has(.relay-btn.on) {
+      border-color: var(--accent);
+      background: var(--accent-muted);
+    }
+    .relay-label { font-size: 11px; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.1em; margin-bottom: 8px; }
+    .relay-card:has(.relay-btn.on) .relay-label { color: var(--accent); }
+    
+    .relay-btn {
+      position: absolute; right: 16px; top: 16px;
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      border: 2px solid var(--border-color);
+      cursor: pointer;
+      background-color: transparent;
+      transition: all 0.2s;
+      outline: none;
+    }
+    .relay-btn.on {
+      border-color: var(--accent);
+      background-color: var(--accent);
+      box-shadow: 0 0 10px var(--accent);
+    }
+    .relay-name-input {
+      background: transparent; border: none;
+      color: var(--text-main);
+      font-weight: 600; font-size: 16px;
+      width: 80%; padding: 0; outline: none; margin-bottom: 4px;
+      font-family: var(--font-ui);
+    }
+    .relay-name-input:focus, .relay-name-input:hover {
+      border-bottom: 1px dashed var(--text-muted);
+    }
+
+    /* Pattern Panel */
+    .pattern-btn {
+      display: block;
+      width: 100%;
+      padding: 12px; font-size: 11px; text-align: center;
+      border: 1px solid var(--border-color); border-radius: 6px;
+      background: var(--card-bg); color: white; cursor: pointer; transition: 0.2s;
+    }
+    .pattern-btn.active { border-color: var(--color-warn); color: var(--color-warn); }
+    .pattern-btn:hover { background: rgba(255,255,255,0.05); }
+    
+    .visualizer {
+      display: flex; justify-content: center; gap: 8px; margin-top: 16px; background: transparent; padding: 0;
+    }
+    .vi-box {
+      width: 12px; height: 12px; background-color: #333; border-radius: 2px; transition: background-color 0.1s, box-shadow 0.1s;
+    }
+    .vi-box[style*="background-color: var(--color-on)"] { box-shadow: 0 0 10px var(--accent); }
+
+    /* Voice Panel */
+    .voice-panel {
+      text-align: center; background: #11141D;
+    }
+    .mic-btn {
+      width: 48px; height: 48px; border-radius: 50%; background: #3B82F6;
+      border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 15px auto; box-shadow: 0 0 15px rgba(59, 130, 246, 0.4); transition: 0.3s;
+    }
+    .mic-btn.listening {
+      background-color: var(--color-err); box-shadow: 0 0 15px rgba(239, 68, 68, 0.6); animation: pulse 1.5s infinite;
+    }
+    .mic-icon {
+      font-size: 20px; color: white;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+      70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    .voice-log {
+      background: #000; border-radius: 4px; padding: 10px; font-size: 12px; font-family: var(--font-mono);
+      color: #818CF8; border: 1px solid #1E293B; margin-top: 12px; text-align: left; min-height: 40px;
+    }
+    .voice-err-msg { color: var(--color-warn); font-size: 11px; display: none; margin-bottom: 10px;}
+
+    /* Activity Log */
+    .activity-log {
+      height: calc(100vh - 120px); overflow-y: auto; background: transparent; border: none; padding: 0;
+    }
+    @media(max-width: 1024px) { .activity-log { height: 300px; } }
+    .log-entry { margin-bottom: 0; font-family: var(--font-mono); font-size: 10px; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.03); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-main); }
+    .log-time { color: var(--color-pub); }
+    .log-broker { color: var(--text-muted); }
+    .log-rx { color: var(--accent); }
+    .log-tx { color: var(--color-warn); }
+    .log-err { color: var(--color-err); }
+    .log-topic { color: var(--text-main); }
+    .log-payload { color: var(--text-muted); }
+  </style>
+</head>
+<body>
+
+  <div id="warning-banner">PERINGATAN: Semua Broker MQTT Terputus! Koneksi kontrol offline.</div>
+
+  <div class="dashboard">
+    <!-- KOLOM KIRI: BROKERS -->
+    <aside class="scrollable-col">
+      <h2 style="padding-left: 5px;">Brokers Connection</h2>
+      
+      <!-- Broker 1 -->
+      <div class="card" id="card-broker-0">
+        <div class="card-title">
+          <span>Mosquitto Public</span>
+          <span class="broker-status status-disconnected" id="status-0">Disconnected</span>
+        </div>
+        <div class="input-group">
+          <label>URL WSS</label>
+          <input type="text" value="wss://test.mosquitto.org:8081" disabled>
+        </div>
+        <button class="btn btn-connect" onclick="connectBrokerUI(0)">Connect</button>
+        <button class="btn btn-disconnect" onclick="disconnectBrokerUI(0)">Disconnect</button>
+      </div>
+
+      <!-- Broker 2 -->
+      <div class="card" id="card-broker-1">
+        <div class="card-title">
+          <span>HiveMQ Public</span>
+          <span class="broker-status status-disconnected" id="status-1">Disconnected</span>
+        </div>
+        <div class="input-group">
+          <label>URL WSS</label>
+          <input type="text" value="wss://broker.hivemq.com:8884/mqtt" disabled>
+        </div>
+        <button class="btn btn-connect" onclick="connectBrokerUI(1)">Connect</button>
+        <button class="btn btn-disconnect" onclick="disconnectBrokerUI(1)">Disconnect</button>
+      </div>
+
+      <!-- Broker 3 -->
+      <div class="card" id="card-broker-2">
+        <div class="card-title">
+          <span>Flespi</span>
+          <span class="broker-status status-disconnected" id="status-2">Disconnected</span>
+        </div>
+        <div class="input-group">
+          <label>URL WSS</label>
+          <input type="text" value="wss://mqtt.flespi.io:443" disabled>
+        </div>
+        <div class="input-group">
+          <label>Flespi Token (Username)</label>
+          <input type="text" id="flespi-token" placeholder="Paste Token disini..." onchange="saveToken()">
+        </div>
+        <button class="btn btn-connect" onclick="connectBrokerUI(2)">Connect</button>
+        <button class="btn btn-disconnect" onclick="disconnectBrokerUI(2)">Disconnect</button>
+      </div>
+    </aside>
+
+    <!-- KOLOM TENGAH: MAIN CONTENT -->
+    <main class="scrollable-col">
+      <h2>Kontrol & Sensor</h2>
+      
+      <!-- Sensor Data -->
+      <div class="card">
+        <div class="card-title">
+          <span>Sensor Suhu & Kelembapan</span>
+          <span class="badge badge-offline" id="sensor-offline">Sensor Offline</span>
+          <span class="badge badge-error" id="sensor-invalid">Data Tidak Valid</span>
+        </div>
+        <div class="sensor-values">
+          <div class="sensor-box">
+            <div class="sensor-val" id="val-temp">--°C</div>
+            <div class="sensor-label">Suhu Default</div>
+          </div>
+          <div class="sensor-box">
+            <div class="sensor-val" id="val-hum">--%</div>
+            <div class="sensor-label">Kelembapan</div>
+          </div>
+        </div>
+        <!-- Progress Bars -->
+        <div class="progress-bar-bg"><div class="progress-bar-fill" id="bar-temp"></div></div>
+        <div class="progress-bar-bg"><div class="progress-bar-fill" id="bar-hum" style="background-color: #3b82f6;"></div></div>
+        
+        <div class="sensor-meta">
+          <span id="sensor-topic">Topic: home/sensor/dht</span>
+          <span id="sensor-time">Terakhir update: -</span>
+        </div>
+      </div>
+
+      <!-- Voice Command -->
+      <div class="card voice-panel">
+        <div class="card-title"><span>Perintah Suara (Speech API)</span></div>
+        <p class="voice-err-msg" id="voice-error">Browser ini tidak mendukung perintah suara. Gunakan Chrome/Edge.</p>
+        <button class="mic-btn" id="btn-mic" onclick="toggleMic()">
+          <span class="mic-icon">🎤</span>
+        </button>
+        <div class="voice-log" id="voice-transcript">Klik mic untuk mulai mendengarkan...</div>
+        <div class="voice-log" style="color: var(--color-on);" id="voice-action">Aksi eksekusi akan muncul disini.</div>
+      </div>
+
+      <!-- Relays Panel -->
+      <div class="card">
+        <div class="card-title"><span>Kontrol 4 Relay</span></div>
+        <div class="relay-grid">
+          <!-- Relay 1 -->
+          <div class="relay-card">
+            <div class="relay-label">Relay 1</div>
+            <button class="relay-btn" id="btn-relay-1" onclick="toggleRelay(1)"></button>
+            <input type="text" class="relay-name-input" value="Beban 1" title="Klik untuk edit">
+          </div>
+          <!-- Relay 2 -->
+          <div class="relay-card">
+            <div class="relay-label">Relay 2</div>
+            <button class="relay-btn" id="btn-relay-2" onclick="toggleRelay(2)"></button>
+            <input type="text" class="relay-name-input" value="Beban 2" title="Klik untuk edit">
+          </div>
+          <!-- Relay 3 -->
+          <div class="relay-card">
+            <div class="relay-label">Relay 3</div>
+            <button class="relay-btn" id="btn-relay-3" onclick="toggleRelay(3)"></button>
+            <input type="text" class="relay-name-input" value="Beban 3" title="Klik untuk edit">
+          </div>
+          <!-- Relay 4 -->
+          <div class="relay-card">
+            <div class="relay-label">Relay 4</div>
+            <button class="relay-btn" id="btn-relay-4" onclick="toggleRelay(4)"></button>
+            <input type="text" class="relay-name-input" value="Beban 4" title="Klik untuk edit">
+          </div>
+        </div>
+      </div>
+
+      <!-- Pattern Panel -->
+      <div class="card">
+        <div class="card-title"><span>Animasi & Pola (Kombinasi)</span></div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <button class="pattern-btn" id="pat-KIRI_KE_KANAN" onclick="setPattern('KIRI_KE_KANAN')">Kiri ke Kanan</button>
+          <button class="pattern-btn" id="pat-KANAN_KE_KIRI" onclick="setPattern('KANAN_KE_KIRI')">Kanan ke Kiri</button>
+          <button class="pattern-btn" id="pat-STROBE" onclick="setPattern('STROBE')">Strobe</button>
+          <button class="pattern-btn" id="pat-OFF" onclick="setPattern('OFF')">Matikan Pola</button>
+        </div>
+        <!-- Visualizer -->
+        <div class="visualizer" id="visualizer">
+          <div class="vi-box" id="vi-1"></div>
+          <div class="vi-box" id="vi-2"></div>
+          <div class="vi-box" id="vi-3"></div>
+          <div class="vi-box" id="vi-4"></div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- KOLOM KANAN: LOG -->
+    <aside>
+      <div class="card" style="height: 100%; display: flex; flex-direction: column; margin-bottom: 0;">
+        <div class="card-title">
+          <span>Log Aktivitas (Max 30)</span>
+        </div>
+        <div class="activity-log" id="activity-log">
+          <!-- Logs will be prepended here -->
+        </div>
+        <button class="btn btn-clear" onclick="clearLogs()">Bersihkan Log</button>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    // ============================================================
+    // KONFIGURASI — EDIT BAGIAN INI SESUAI KEBUTUHAN
+    // ============================================================
+    const BROKERS = [
+      {
+        name: "Mosquitto Public",
+        url: "wss://test.mosquitto.org:8081",
+        user: "",
+        pass: "",
+        useToken: false
+      },
+      {
+        name: "HiveMQ Public",
+        url: "wss://broker.hivemq.com:8884/mqtt",
+        user: "",
+        pass: "",
+        useToken: false
+      },
+      {
+        name: "Flespi",
+        url: "wss://mqtt.flespi.io:443",
+        user: "", // Akan diisi dari input/localStorage
+        pass: "",
+        useToken: true
+      }
+    ];
+
+    const TOPICS = {
+      relay: {
+        cmd: (n) => `home/relay/${n}/set`,
+        status: (n) => `home/relay/${n}/status`
+      },
+      combo: "home/relay/combo/set",
+      sensor: "home/sensor/dht"
+    };
+    // ============================================================
+
+    // --- State Global ---
+    const clients = [null, null, null];
+    const connectRetries = [0, 0, 0];
+    const MAX_RETRIES = 5;
+    
+    const relayStates = { 1: 'OFF', 2: 'OFF', 3: 'OFF', 4: 'OFF' };
+    let currentPattern = 'OFF';
+    let animFrame = null;
+    let animIndex = 0;
+    
+    let lastSensorTime = Date.now();
+    let logs = [];
+    const MAX_LOGS = 30;
+
+    // --- Init DOM Elements ---
+    document.addEventListener("DOMContentLoaded", () => {
+      // Load Token Flespi
+      const saved = localStorage.getItem('flespi_token');
+      if (saved) {
+        document.getElementById('flespi-token').value = saved;
+        BROKERS[2].user = saved;
+      }
+      
+      // Setup Voice recognition
+      setupVoice();
+
+      // Setup Sensor Watchdog (20 detik)
+      setInterval(() => {
+        const now = Date.now();
+        if (now - lastSensorTime > 20000) {
+          document.getElementById('sensor-offline').style.display = 'inline-block';
+        } else {
+          document.getElementById('sensor-offline').style.display = 'none';
+        }
+      }, 2000);
+
+      // Auto start animation loop
+      requestAnimationFrame(runVisualizer);
+    });
+
+    // --- UI Interactions ---
+    function saveToken() {
+      const val = document.getElementById('flespi-token').value.trim();
+      localStorage.setItem('flespi_token', val);
+      BROKERS[2].user = val;
+    }
+
+    function checkOverallConnection() {
+      const connectedCount = clients.filter(c => c && c.connected).length;
+      document.getElementById('warning-banner').style.display = connectedCount === 0 ? 'block' : 'none';
+    }
+
+    function setBrokerStatus(idx, statusStr, cssClass) {
+      const el = document.getElementById(`status-${idx}`);
+      el.textContent = statusStr;
+      el.className = `broker-status ${cssClass}`;
+      checkOverallConnection();
+    }
+
+    // --- MQTT Logic ---
+    function connectBrokerUI(idx) {
+      if (idx === 2 && BROKERS[2].user === "") {
+        alert("Harap masukkan token Flespi terlebih dahulu!");
+        return;
+      }
+      connectRetries[idx] = 0;
+      connectMQTT(idx);
+    }
+
+    function disconnectBrokerUI(idx) {
+      if (clients[idx]) {
+        try {
+          clients[idx].end(); // Putuskan koneksi
+        } catch(e) {}
+        clients[idx] = null;
+      }
+      setBrokerStatus(idx, "Disconnected", "status-disconnected");
+    }
+
+    function connectMQTT(idx) {
+      const broker = BROKERS[idx];
+      setBrokerStatus(idx, "Connecting...", "status-connecting");
+      
+      const clientId = "webclient_" + Math.random().toString(36).substr(2, 9);
+      const options = {
+        clientId: clientId,
+        clean: true,
+        reconnectPeriod: 0 // Manual reconnect handling
+      };
+
+      if (broker.useToken) {
+        options.username = broker.user;
+        options.password = broker.pass;
+      } else if (broker.user) {
+        options.username = broker.user;
+        options.password = broker.pass;
+      }
+
+      try {
+        const client = mqtt.connect(broker.url, options);
+        clients[idx] = client;
+
+        client.on('connect', () => {
+          connectRetries[idx] = 0;
+          setBrokerStatus(idx, "Connected", "status-connected");
+          
+          // Subscribe topics
+          [1,2,3,4].forEach(n => client.subscribe(TOPICS.relay.status(n)));
+          client.subscribe(TOPICS.sensor);
+          
+          addLog(broker.name, 'CONN', 'System', 'Terhubung ke broker');
+        });
+
+        client.on('message', (topic, message) => {
+          const payload = message.toString();
+          handleIncomingMessage(idx, topic, payload);
+        });
+
+        client.on('close', () => {
+          if (clients[idx] === client) { // Only handle if it wasn't manual disconnect
+             handleReconnect(idx);
+          }
+        });
+
+        client.on('error', (err) => {
+          addLog(broker.name, 'ERR', 'System', err.message || 'Connection Error');
+          client.end();
+        });
+
+      } catch (e) {
+        addLog(broker.name, 'ERR', 'Exception', e.message);
+        handleReconnect(idx);
+      }
+    }
+
+    function handleReconnect(idx) {
+      const broker = BROKERS[idx];
+      if (connectRetries[idx] < MAX_RETRIES) {
+        connectRetries[idx]++;
+        setBrokerStatus(idx, `Retry ${connectRetries[idx]}/${MAX_RETRIES}`, "status-connecting");
+        addLog(broker.name, 'CONN', 'System', `Mencoba reconnect (${connectRetries[idx]}) dalam 5 detik`);
+        
+        setTimeout(() => {
+          if (clients[idx]) connectMQTT(idx); // Pastikan belum di disconnect user
+        }, 5000);
+      } else {
+        setBrokerStatus(idx, "Error / Timeout", "status-error");
+        clients[idx] = null;
+      }
+    }
+
+    function publishToAll(topic, payload) {
+      let sentAny = false;
+      clients.forEach((client, idx) => {
+        if (client && client.connected) {
+          try {
+            client.publish(topic, payload);
+            addLog(BROKERS[idx].name, 'TX', topic, payload);
+            sentAny = true;
+          } catch(e) {
+            addLog(BROKERS[idx].name, 'ERR', topic, 'Gagal publish: ' + e.message);
+          }
+        }
+      });
+      if (!sentAny) {
+           addLog('SYSTEM', 'ERR', topic, 'Gagal publish, semua broker terputus!');
+      }
+    }
+
+    // --- Message Handling ---
+    function handleIncomingMessage(brokerIdx, topic, payload) {
+      addLog(BROKERS[brokerIdx].name, 'RX', topic, payload);
+
+      // Check Relay Status
+      for(let i=1; i<=4; i++) {
+        if (topic === TOPICS.relay.status(i)) {
+          relayStates[i] = payload.toUpperCase();
+          updateRelayUI(i, relayStates[i]);
+          return;
+        }
+      }
+
+      // Check Sensor
+      if (topic === TOPICS.sensor) {
+        lastSensorTime = Date.now();
+        document.getElementById('sensor-invalid').style.display = 'none';
+        try {
+          const data = JSON.parse(payload);
+          if (data.temperature !== undefined && data.humidity !== undefined) {
+             renderSensorData(data.temperature, data.humidity);
+          } else {
+             throw new Error("Format JSON salah");
+          }
+        } catch (e) {
+          document.getElementById('sensor-invalid').style.display = 'inline-block';
+        }
+      }
+    }
+
+    // --- UI Update logic ---
+    function toggleRelay(n) {
+      const targetState = relayStates[n] === 'ON' ? 'OFF' : 'ON';
+      publishToAll(TOPICS.relay.cmd(n), targetState);
+      // Wait for status retained message for real UI change, but give optimistic visual cue
+      // (Optional: optimism rendering can be done here, but usually it's safer to wait for sub)
+    }
+
+    function updateRelayUI(n, state) {
+      const btn = document.getElementById(`btn-relay-${n}`);
+      if (state === 'ON') {
+        btn.classList.add('on');
+      } else {
+        btn.classList.remove('on');
+      }
+    }
+
+    function renderSensorData(t, h) {
+      document.getElementById('val-temp').textContent = t.toFixed(1) + "°C";
+      document.getElementById('val-hum').textContent = h.toFixed(1) + "%";
+      
+      const pT = Math.min(Math.max((t / 50) * 100, 0), 100);
+      const pH = Math.min(Math.max((h / 100) * 100, 0), 100);
+
+      document.getElementById('bar-temp').style.width = pT + "%";
+      document.getElementById('bar-hum').style.width = pH + "%";
+
+      const d = new Date();
+      document.getElementById('sensor-time').textContent = `Terakhir update: ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`;
+    }
+
+    function setPattern(cmd) {
+      publishToAll(TOPICS.combo, cmd);
+      currentPattern = cmd;
+      
+      // Update Button Highlight
+      ['KIRI_KE_KANAN', 'KANAN_KE_KIRI', 'STROBE', 'OFF'].forEach(p => {
+        const el = document.getElementById('pat-' + p);
+        if(p === cmd) el.classList.add('active');
+        else el.classList.remove('active');
+      });
+
+      // Reset internal animation state
+      animIndex = 0;
+    }
+
+    function runVisualizer(timestamp) {
+      if (!animFrame) animFrame = timestamp;
+      const elapsed = timestamp - animFrame;
+
+      if (elapsed > 300) { // update every 300ms
+        animFrame = timestamp;
+        
+        const boxes = [
+          document.getElementById('vi-1'),
+          document.getElementById('vi-2'),
+          document.getElementById('vi-3'),
+          document.getElementById('vi-4')
+        ];
+
+        // Matikan semua dulu
+        boxes.forEach(b => b.style.backgroundColor = 'var(--color-off)');
+
+        if (currentPattern === 'KIRI_KE_KANAN') {
+          boxes[animIndex].style.backgroundColor = 'var(--color-on)';
+          animIndex = (animIndex + 1) % 4;
+        } 
+        else if (currentPattern === 'KANAN_KE_KIRI') {
+          boxes[3 - animIndex].style.backgroundColor = 'var(--color-on)';
+          animIndex = (animIndex + 1) % 4;
+        }
+        else if (currentPattern === 'STROBE') {
+          if (animIndex % 2 === 0) {
+            boxes.forEach(b => b.style.backgroundColor = 'var(--color-on)');
+          }
+          animIndex = (animIndex + 1) % 2;
+        }
+      }
+      requestAnimationFrame(runVisualizer);
+    }
+
+    // --- Voice Recognition Logic ---
+    let recognizer = null;
+    let isListening = false;
+    
+    function setupVoice() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        document.getElementById('btn-mic').style.display = 'none';
+        document.getElementById('voice-error').style.display = 'block';
+        return;
+      }
+      
+      recognizer = new SpeechRecognition();
+      recognizer.lang = 'id-ID';
+      recognizer.continuous = false; // satu ucapan satu henti
+      recognizer.interimResults = false;
+
+      recognizer.onstart = () => {
+        isListening = true;
+        document.getElementById('btn-mic').classList.add('listening');
+        document.getElementById('voice-transcript').textContent = "Mendengarkan...";
+      };
+
+      recognizer.onresult = (e) => {
+        const transcript = e.results[0][0].transcript;
+        document.getElementById('voice-transcript').textContent = '"' + transcript + '"';
+        matchVoiceCommand(transcript);
+      };
+
+      recognizer.onerror = (e) => {
+        document.getElementById('voice-transcript').textContent = "Error: " + e.error;
+      };
+
+      recognizer.onend = () => {
+        isListening = false;
+        document.getElementById('btn-mic').classList.remove('listening');
+      };
+    }
+
+    function toggleMic() {
+      if (!recognizer) return;
+      if (isListening) {
+        try { recognizer.stop(); } catch(e){}
+      } else {
+        try { recognizer.start(); } catch(e){}
+      }
+    }
+
+    function matchVoiceCommand(speech) {
+      const txt = speech.toLowerCase();
+      let actionTxt = "Tidak ada perintah dikenali.";
+
+      // Helpers
+      const match = (keywords) => keywords.some(kw => txt.includes(kw));
+      
+      try {
+        // Kontrol Semua
+        if (match(["hidupkan semua", "nyalakan semua", "semua on", "semua nyala"])) {
+          [1,2,3,4].forEach(n => publishToAll(TOPICS.relay.cmd(n), "ON"));
+          actionTxt = "Menyalakan semua relay";
+        } 
+        else if (match(["matikan semua", "semua off", "semua mati"])) {
+          [1,2,3,4].forEach(n => publishToAll(TOPICS.relay.cmd(n), "OFF"));
+          actionTxt = "Mematikan semua relay";
+        }
+        
+        // Kontrol Individual (1-4)
+        else if (match(["relay satu", "relay 1"])) {
+          if (match(["hidupkan", "nyalakan", "on"])) { publishToAll(TOPICS.relay.cmd(1), "ON"); actionTxt = "Relay 1 ON"; }
+          else if (match(["matikan", "mati", "off"])) { publishToAll(TOPICS.relay.cmd(1), "OFF"); actionTxt = "Relay 1 OFF"; }
+        }
+        else if (match(["relay dua", "relay 2"])) {
+          if (match(["hidupkan", "nyalakan", "on"])) { publishToAll(TOPICS.relay.cmd(2), "ON"); actionTxt = "Relay 2 ON"; }
+          else if (match(["matikan", "mati", "off"])) { publishToAll(TOPICS.relay.cmd(2), "OFF"); actionTxt = "Relay 2 OFF"; }
+        }
+        else if (match(["relay tiga", "relay 3"])) {
+          if (match(["hidupkan", "nyalakan", "on"])) { publishToAll(TOPICS.relay.cmd(3), "ON"); actionTxt = "Relay 3 ON"; }
+          else if (match(["matikan", "mati", "off"])) { publishToAll(TOPICS.relay.cmd(3), "OFF"); actionTxt = "Relay 3 OFF"; }
+        }
+        else if (match(["relay empat", "relay 4"])) {
+          if (match(["hidupkan", "nyalakan", "on"])) { publishToAll(TOPICS.relay.cmd(4), "ON"); actionTxt = "Relay 4 ON"; }
+          else if (match(["matikan", "mati", "off"])) { publishToAll(TOPICS.relay.cmd(4), "OFF"); actionTxt = "Relay 4 OFF"; }
+        }
+
+        // Combo Pola
+        else if (match(["pola satu", "kiri ke kanan", "aktifkan pola satu"])) {
+          setPattern('KIRI_KE_KANAN'); actionTxt = "Pola Kiri ke Kanan aktif";
+        }
+        else if (match(["pola dua", "kanan ke kiri", "aktifkan pola dua"])) {
+          setPattern('KANAN_KE_KIRI'); actionTxt = "Pola Kanan ke Kiri aktif";
+        }
+        else if (match(["strobe", "aktifkan strobe"])) {
+          setPattern('STROBE'); actionTxt = "Pola Strobe aktif";
+        }
+        else if (match(["matikan pola", "hentikan pola", "pola off"])) {
+          setPattern('OFF'); actionTxt = "Mematikan pola";
+        }
+
+        // Baca Sensor
+        else if (match(["suhu berapa", "info suhu", "cek sensor", "baca sensor"])) {
+          actionTxt = "Membaca data sensor...";
+          readSensorDataVoice();
+        }
+
+      } catch (e) {
+        actionTxt = "Error memproses perintah!";
+      }
+
+      document.getElementById('voice-action').textContent = "> " + actionTxt;
+    }
+
+    function readSensorDataVoice() {
+      if (!window.speechSynthesis) return;
+      let textToSpeak = "Data sensor tidak tersedia saat ini";
+      
+      const isOffline = (Date.now() - lastSensorTime > 20000);
+      if (!isOffline) {
+         const t = document.getElementById('val-temp').textContent;
+         const h = document.getElementById('val-hum').textContent;
+         if (t !== "--°C") {
+           textToSpeak = `Suhu saat ini adalah ${t.replace('°C','')} derajat celsius. Kelembapan ${h.replace('%','')} persen.`;
+         }
+      }
+
+      const msg = new SpeechSynthesisUtterance(textToSpeak);
+      msg.lang = 'id-ID';
+      window.speechSynthesis.speak(msg);
+    }
+
+    // --- Logging System ---
+    function addLog(broker, mode, topic, payload) {
+      const d = new Date();
+      const time = `[${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}]`;
+      
+      let modeHtml = '';
+      if (mode === 'TX') modeHtml = `<span class="log-tx">↑ kirim</span>`;
+      else if (mode === 'RX') modeHtml = `<span class="log-rx">↓ terima</span>`;
+      else if (mode === 'ERR') modeHtml = `<span class="log-err">ERROR</span>`;
+      else if (mode === 'CONN') modeHtml = `<span class="log-topic">INFO</span>`;
+
+      const html = `
+        <div class="log-entry">
+          <span class="log-time">${time}</span> 
+          <span class="log-broker">[${broker}]</span> 
+          [${modeHtml}] 
+          <span class="log-topic">${topic}</span> 
+          <span class="log-payload">${payload}</span>
+        </div>
+      `;
+      
+      logs.unshift(html);
+      if (logs.length > MAX_LOGS) logs.pop();
+      
+      const logContainer = document.getElementById('activity-log');
+      logContainer.innerHTML = logs.join('');
+    }
+
+    function clearLogs() {
+      logs = [];
+      document.getElementById('activity-log').innerHTML = '';
+    }
+
+  </script>
+</body>
+</html>

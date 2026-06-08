@@ -455,7 +455,13 @@
 
       <!-- Relays Panel -->
       <div class="card">
-        <div class="card-title"><span>Kontrol 4 Relay</span></div>
+        <div class="card-title">
+          <span>Kontrol 4 Relay</span>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-connect" style="padding: 4px 8px; font-size: 10px;" onclick="controlAllRelays('ON')">ALL ON</button>
+            <button class="btn btn-disconnect" style="padding: 4px 8px; font-size: 10px;" onclick="controlAllRelays('OFF')">ALL OFF</button>
+          </div>
+        </div>
         <div class="relay-grid">
           <!-- Relay 1 -->
           <div class="relay-card">
@@ -772,6 +778,10 @@
       }
     }
 
+    function controlAllRelays(state) {
+      [1, 2, 3, 4].forEach(n => publishToAll(TOPICS.relay.cmd(n), state));
+    }
+
     function renderSensorData(t, h) {
       document.getElementById('val-temp').textContent = t.toFixed(1) + "°C";
       document.getElementById('val-hum').textContent = h.toFixed(1) + "%";
@@ -893,11 +903,11 @@
       
       try {
         // Kontrol Semua
-        if (match(["hidupkan semua", "nyalakan semua", "semua on", "semua nyala"])) {
+        if (match(["hidupkan semua lampu", "hidupkan semua", "nyalakan semua", "semua on", "semua nyala"])) {
           [1,2,3,4].forEach(n => publishToAll(TOPICS.relay.cmd(n), "ON"));
           actionTxt = "Menyalakan semua relay";
         } 
-        else if (match(["matikan semua", "semua off", "semua mati"])) {
+        else if (match(["matikan semua lampu", "matikan semua", "semua off", "semua mati"])) {
           [1,2,3,4].forEach(n => publishToAll(TOPICS.relay.cmd(n), "OFF"));
           actionTxt = "Mematikan semua relay";
         }
@@ -921,21 +931,21 @@
         }
 
         // Combo Pola
-        else if (match(["pola satu", "kiri ke kanan", "aktifkan pola satu"])) {
+        else if (match(["hidupkan pola 1", "matikan pola 1", "pola satu", "kiri ke kanan", "aktifkan pola satu"])) {
           setPattern('KIRI_KE_KANAN'); actionTxt = "Pola Kiri ke Kanan aktif";
         }
-        else if (match(["pola dua", "kanan ke kiri", "aktifkan pola dua"])) {
+        else if (match(["hidupkan pola 2", "matikan pola 2", "pola dua", "kanan ke kiri", "aktifkan pola dua"])) {
           setPattern('KANAN_KE_KIRI'); actionTxt = "Pola Kanan ke Kiri aktif";
         }
-        else if (match(["strobe", "aktifkan strobe"])) {
+        else if (match(["hidupkan pola 3", "matikan pola 3", "strobe", "aktifkan strobe"])) {
           setPattern('STROBE'); actionTxt = "Pola Strobe aktif";
         }
-        else if (match(["matikan pola", "hentikan pola", "pola off"])) {
+        else if (match(["stop pola", "matikan pola", "hentikan pola", "pola off"])) {
           setPattern('OFF'); actionTxt = "Mematikan pola";
         }
 
         // Baca Sensor
-        else if (match(["suhu berapa", "info suhu", "cek sensor", "baca sensor"])) {
+        else if (match(["info sensor", "suhu berapa", "info suhu", "cek sensor", "baca sensor"])) {
           actionTxt = "Membaca data sensor...";
           readSensorDataVoice();
         }
